@@ -177,6 +177,7 @@ struct device_type __sbdd_device_type = {
 static struct sbdd      __sbdd;
 //static int              __sbdd_major = 0;
 static unsigned long    __sbdd_capacity_mib = 100;
+static int __auto_add_dev = 1;
 
 static sector_t sbdd_xfer(struct bio_vec* bvec, sector_t pos, int dir)
 {
@@ -451,8 +452,9 @@ static int __init sbdd_init(void)
 {
 	int ret = 0;
 
+	pr_info("starting bus initialization...\n");
 	ret = bus_register(&__sbdd_bus_type);
-	if(ret < 0) {
+	if (ret < 0) {
 		pr_err("Unable to register bus \n");
 		goto bus_err;
 	}
@@ -460,19 +462,21 @@ static int __init sbdd_init(void)
 	pr_info("starting driver initialization...\n");
 	ret = sbdd_register_driver(&__sbdd_driver);
 
-        if(ret) {
+        if (ret) {
                 pr_err("unable to register driver: %d\n", ret);
                 goto driver_err;
         }
 	
-	pr_info("starting initialization...\n");
-	ret = sbdd_create(&__sbdd, SBDD_NAME, __sbdd_capacity_mib);
+	if (__auto_add_dev) {
+		pr_info("starting dev initialization...\n");
+		ret = sbdd_create(&__sbdd, SBDD_NAME, __sbdd_capacity_mib);
 
-	if (ret) {
-		pr_warn("initialization failed\n");
-		goto auto_dev_err;
-	} else {
-		pr_info("initialization complete\n");
+		if (ret) {
+			pr_warn("dev initialization failed\n");
+			goto auto_dev_err;
+		} else {
+			pr_info("dev initialization complete\n");
+		}
 	}
 
 	return ret;
@@ -498,7 +502,8 @@ static void __exit sbdd_exit(void)
 	pr_info("driver unregistered\n");
 	bus_unregister(&__sbdd_bus_type);
 	pr_info("bus unregistered\n");
-	sbdd_delete(&__sbdd);
+	if(__auto_add_dev)
+		sbdd_delete(&__sbdd);
 	pr_info("exiting complete\n");
 }
 
@@ -510,6 +515,7 @@ module_exit(sbdd_exit);
 
 /* Set desired capacity with insmod */
 module_param_named(capacity_mib, __sbdd_capacity_mib, ulong, S_IRUGO);
+module_param_named(auto_add_dev, __auto_add_dev, int, S_IRUGO);
 
 /* Note for the kernel: a free license module. A warning will be outputted without it. */
 MODULE_LICENSE("GPL");
