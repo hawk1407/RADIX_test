@@ -8,7 +8,8 @@ struct sbdd {
         atomic_t                refs_cnt;
         sector_t                capacity;
         u8                      *data;
-        const char              *type;
+	int			major;
+	unsigned long 		capacity_mib;
         struct gendisk          *gd;
         struct device           *dev;
         struct request_queue    *q;
@@ -20,8 +21,6 @@ struct sbdd {
 #define to_sbdd_device(device) container_of(device, struct sbdd, dev)
 
 struct sbdd_driver {
-        const char *type;
-
         int (*probe)(struct sbdd *dev);
         void (*remove)(struct sbdd *dev);
 
