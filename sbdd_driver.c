@@ -101,9 +101,9 @@ struct sbdd_driver __sbdd_driver = {
         },
 };
 
-static struct sbdd      __sbdd;
+//static struct sbdd      __sbdd;
 static unsigned long    __sbdd_capacity_mib = 100;
-static int __auto_add_dev = 1;
+static int __usr_mod_dev = 1;
 
 static sector_t sbdd_xfer(struct bio_vec* bvec, sector_t pos, int dir, struct sbdd *sbdd_dev)
 {
@@ -387,10 +387,10 @@ static int __init sbdd_driver_init(void)
                 pr_err("unable to register driver: %d\n", ret);
                 goto driver_err;
         }
-	
-	if (__auto_add_dev) {
+
+	if (!__usr_mod_dev) {
 		pr_info("starting dev initialization...\n");
-		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib);
+		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib, 1);
 
 		if (ret) {
 			pr_warn("dev initialization failed\n");
@@ -400,10 +400,10 @@ static int __init sbdd_driver_init(void)
 		}
 	}
 
+	set_usr_mod_dev(__usr_mod_dev);
 	return ret;
 
 auto_dev_err:
-	sbdd_delete(&__sbdd);
 	sbdd_unregister_driver(&__sbdd_driver);
 driver_err:
 	return ret;
@@ -431,7 +431,7 @@ module_exit(sbdd_driver_exit);
 
 /* Set desired capacity with insmod */
 module_param_named(capacity_mib, __sbdd_capacity_mib, ulong, S_IRUGO);
-module_param_named(auto_add_dev, __auto_add_dev, int, S_IRUGO);
+module_param_named(usr_mod_dev, __usr_mod_dev, int, S_IRUGO);
 
 /* Note for the kernel: a free license module. A warning will be outputted without it. */
 MODULE_LICENSE("GPL");

@@ -93,7 +93,7 @@ struct device_type __sbdd_device_type = {
 };
 
 
-//int sbdd_add_dev(const char *name, unsigned long capacity_mib);
+static int usr_mod_dev;
 
 static ssize_t
 add_store(struct bus_type *bt, const char *buf, size_t count)
@@ -108,11 +108,11 @@ add_store(struct bus_type *bt, const char *buf, size_t count)
 		return -EINVAL;
 	}
 
-	return sbdd_add_dev(name, capacity_mib) ? : count;
+	return sbdd_add_dev(name, capacity_mib, usr_mod_dev) ? : count;
 }
 struct bus_attribute bus_attr_add = __ATTR(add, S_IWUSR, NULL, add_store);
 
-static int sbdd_del_dev_name(const char *name);
+static int sbdd_del_dev_name(const char *name, int allow_del);
 
 static ssize_t
 del_store(struct bus_type *bt, const char *buf, size_t count)
@@ -122,7 +122,7 @@ del_store(struct bus_type *bt, const char *buf, size_t count)
         if (sscanf(buf, "%s", name) != 1)
                 return -EINVAL;
 
-        return sbdd_del_dev_name(name) ? : count;
+        return sbdd_del_dev_name(name, usr_mod_dev) ? : count;
 
 }
 struct bus_attribute bus_attr_del = __ATTR(del, S_IWUSR, NULL, del_store);
@@ -153,9 +153,14 @@ struct bus_type __sbdd_bus_type = {
 };
 
 
-int sbdd_add_dev(const char *name, unsigned long capacity_mib)
+int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add)
 {
 	struct sbdd_device *sbdd_dev;
+	if(!allow_add)
+	{
+		pr_info("user cannot mod devs mode is enabled\n");
+		return 0;
+	}
 	pr_info("user add dev name: %s, capacity_mib: %lu \n", name, capacity_mib);
         sbdd_dev = kzalloc(sizeof(*sbdd_dev), GFP_KERNEL);
         if (!sbdd_dev)
@@ -173,9 +178,14 @@ int sbdd_add_dev(const char *name, unsigned long capacity_mib)
 EXPORT_SYMBOL(sbdd_add_dev);
 
 
-static int sbdd_del_dev_name(const char *name)
+static int sbdd_del_dev_name(const char *name, int allow_del)
 {
         struct device *dev = NULL;
+	if(!allow_del)
+	{
+		pr_info("user cannot mod devs mode is enabled\n");
+		return 0;
+	}
 
 	pr_info("sbdd_del_dev %s", name);
         dev = bus_find_device_by_name(&__sbdd_bus_type, NULL, name);
@@ -225,6 +235,12 @@ void sbdd_unregister_driver(struct sbdd_driver *drv)
 	pr_info("driver unregistered\n");
 }
 EXPORT_SYMBOL(sbdd_unregister_driver);
+
+void set_usr_mod_dev(int only_usr_mod_dev)
+{
+	usr_mod_dev = only_usr_mod_dev;
+}
+EXPORT_SYMBOL(set_usr_mod_dev);
 
 static int __init sbdd_bus_init(void)
 {

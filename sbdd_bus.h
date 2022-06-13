@@ -19,6 +19,7 @@ struct sbdd_driver {
 
 int sbdd_register_driver(struct sbdd_driver *drv);
 void sbdd_unregister_driver(struct sbdd_driver *drv);
-int sbdd_add_dev(const char *name, unsigned long capacity_mib);
+int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add);
+void set_usr_mod_dev(int only_usr_mod_dev);
 
 #endif //_SBDD_BUS_H
