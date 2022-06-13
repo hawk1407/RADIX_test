@@ -37,12 +37,13 @@ static int sbdd_match(struct device *dev, struct device_driver *driver)
 	sbdd_dev = to_sbdd_device(dev);
         sbdd_drv = to_sbdd_driver(driver);
 
-        if (!strcmp(dev_name(&sbdd_dev->dev), sbdd_drv->driver.name)) {
+        /*if (!strcmp(dev_name(&sbdd_dev->dev), sbdd_drv->driver.name)) {
 		return 1;
 	}
 	pr_err("dev %s and drv %s does not match\n", dev_name(&sbdd_dev->dev), 
 		sbdd_drv->driver.name);
-	return 0;
+	return 0;*/
+	return 1;
 }
 
 static int sbdd_probe(struct device *dev)
@@ -92,7 +93,7 @@ struct device_type __sbdd_device_type = {
 };
 
 
-static int sbdd_add_dev(const char *name, unsigned long capacity_mib);
+//int sbdd_add_dev(const char *name, unsigned long capacity_mib);
 
 static ssize_t
 add_store(struct bus_type *bt, const char *buf, size_t count)
@@ -152,7 +153,7 @@ struct bus_type __sbdd_bus_type = {
 };
 
 
-static int sbdd_add_dev(const char *name, unsigned long capacity_mib)
+int sbdd_add_dev(const char *name, unsigned long capacity_mib)
 {
 	struct sbdd_device *sbdd_dev;
 	pr_info("user add dev name: %s, capacity_mib: %lu \n", name, capacity_mib);
@@ -169,6 +170,8 @@ static int sbdd_add_dev(const char *name, unsigned long capacity_mib)
 
         return device_register(&sbdd_dev->dev);
 }
+EXPORT_SYMBOL(sbdd_add_dev);
+
 
 static int sbdd_del_dev_name(const char *name)
 {

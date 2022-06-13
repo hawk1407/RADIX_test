@@ -34,15 +34,6 @@
 #define SBDD_MIB_SECTORS       (1 << (20 - SBDD_SECTOR_SHIFT))
 #define SBDD_NAME              "sbdd"
 #define BUF_SIZE 1024
-/*
-struct sbdd_test {
-	spinlock_t lock;
-	struct request_queue    *q;
-	struct sbdd_device      *dev;
-	struct gendisk          *gd;
-	unsigned char       *data;
-};*/
-
 
 struct sbdd {
         wait_queue_head_t       exitwait;
@@ -52,7 +43,6 @@ struct sbdd {
         sector_t                capacity;
         u8                      *data;
         int		        major;
-        //unsigned long           capacity_mib;
         struct gendisk          *gd;
         struct sbdd_device      *dev;
         struct request_queue    *q;
@@ -64,72 +54,8 @@ struct sbdd {
 static int sbdd_create(struct sbdd *sbdd_dev);
 static void sbdd_delete(struct sbdd *sbdd_dev);
 
-
-/*struct sbdd_misc_device {
-	struct miscdevice misc;
-	struct sbdd_device *dev;
-	char buf[BUF_SIZE];
-};
-
-static int my_open(struct inode *inode, struct file *file)
-{
-        return 0;
-}
-
-static int my_release(struct inode *inode, struct file *file)
-{
-        return 0;
-}
-
-static ssize_t my_read(struct file *file, char __user *user_buffer,
-                   size_t size, loff_t *offset)
-{
-        struct sbdd_misc_device *bmd = (struct sbdd_misc_device *)file->private_data;
-        ssize_t len = min(sizeof(bmd->buf) - (ssize_t)*offset, size);
-        pr_info("my_write\n");
-
-        if (len <= 0)
-                return 0;
-
-        if (copy_to_user(user_buffer, bmd->buf + *offset, len))
-                return -EFAULT;
-
-        *offset += len;
-        return len;
-}
-
-static ssize_t my_write(struct file *file, const char __user *user_buffer,
-                    size_t size, loff_t *offset)
-{
-        struct sbdd_misc_device *bmd = (struct sbdd_misc_device *)file->private_data;
-        ssize_t len = min(sizeof(bmd->buf) - (ssize_t)*offset, size);
-
-        pr_info("my_read\n");
-
-        if (len <= 0)
-                return 0;
-
-        if (copy_from_user(bmd->buf + *offset, user_buffer, len))
-                return -EFAULT;
-
-        *offset += len;
-        return len;
-}
-
-struct file_operations __sbdd_misc_fops = {
-        .owner = THIS_MODULE,
-        .open = my_open,
-        .read = my_read,
-        .write = my_write,
-	.release = my_release,
-};
-
-static int sbdd_misc_count;*/
-
 int sbdd_drv_probe(struct sbdd_device *dev)
 {
-
-	//struct sbdd_misc_device *bmd;
 	struct sbdd *sbdd_dev;
         char buf[32];
         int ret;
@@ -137,27 +63,11 @@ int sbdd_drv_probe(struct sbdd_device *dev)
 	pr_info("sbdd_drv_probe\n");
         dev_info(&dev->dev, "%s\n", __func__);
 
-        /*bmd = kzalloc(sizeof(*bmd), GFP_KERNEL);
-        if (!bmd)
-                return -ENOMEM;*/
 	sbdd_dev = kzalloc(sizeof(*sbdd_dev), GFP_KERNEL);
         if (!sbdd_dev)
                 return -ENOMEM;
 
 	sbdd_dev->dev = dev;
-//        bmd->misc.minor = MISC_DYNAMIC_MINOR;
-//        snprintf(buf, sizeof(buf), "sbdd-misc-%d", sbdd_misc_count++);
-//        bmd->misc.name = kstrdup(buf, GFP_KERNEL);
-//        bmd->misc.parent = &dev->dev;
-//        bmd->misc.fops = &__sbdd_misc_fops;
-//        bmd->dev = dev;
-//        dev_set_drvdata(&dev->dev, bmd);
-
-        /*ret = misc_register(&bmd->misc);
-        if (ret) {
-                dev_err(&dev->dev, "failed to register misc device: %d\n", ret);
-                return ret;
-        }*/
 	ret = sbdd_create(sbdd_dev);
         
 	if (ret) {
@@ -170,17 +80,16 @@ int sbdd_drv_probe(struct sbdd_device *dev)
 
 void sbdd_drv_remove(struct sbdd_device *dev)
 {
-	//struct sbdd_misc_device *bmd;
-	struct sbdd *sbdd_dev;
+	struct sbdd *sbdd_dev=NULL;
 
 	pr_info("sbdd drv remove device");
 
-	//bmd = (struct sbdd_misc_device *)dev_get_drvdata(&dev->dev);
 	sbdd_dev = (struct sbdd *)dev_get_drvdata(&dev->dev);
-
-	//misc_deregister(&bmd->misc);
+	if (!sbdd_dev) {
+		pr_err("could not find dev\n");
+		return;
+	}
 	
-	//kfree(bmd);
 	sbdd_delete(sbdd_dev);
 }
 
@@ -197,27 +106,27 @@ static struct sbdd      __sbdd;
 static unsigned long    __sbdd_capacity_mib = 100;
 static int __auto_add_dev = 1;
 
-static sector_t sbdd_xfer(struct bio_vec* bvec, sector_t pos, int dir)
+static sector_t sbdd_xfer(struct bio_vec* bvec, sector_t pos, int dir, struct sbdd *sbdd_dev)
 {
 	void *buff = page_address(bvec->bv_page) + bvec->bv_offset;
 	sector_t len = bvec->bv_len >> SBDD_SECTOR_SHIFT;
 	size_t offset;
 	size_t nbytes;
 
-	if (pos + len > __sbdd.capacity)
-		len = __sbdd.capacity - pos;
+	if (pos + len > sbdd_dev->capacity)
+		len = sbdd_dev->capacity - pos;
 
 	offset = pos << SBDD_SECTOR_SHIFT;
 	nbytes = len << SBDD_SECTOR_SHIFT;
 
-	spin_lock(&__sbdd.datalock);
+	spin_lock(&sbdd_dev->datalock);
 
 	if (dir)
-		memcpy(__sbdd.data + offset, buff, nbytes);
+		memcpy(sbdd_dev->data + offset, buff, nbytes);
 	else
-		memcpy(buff, __sbdd.data + offset, nbytes);
+		memcpy(buff, sbdd_dev->data + offset, nbytes);
 
-	spin_unlock(&__sbdd.datalock);
+	spin_unlock(&sbdd_dev->datalock);
 
 	pr_debug("pos=%6llu len=%4llu %s\n", pos, len, dir ? "written" : "read");
 
@@ -278,21 +187,22 @@ static void sbdd_xfer_bio(struct bio *bio)
 	sector_t pos = bio->bi_iter.bi_sector;
 
 	bio_for_each_segment(bvec, bio, iter)
-		pos += sbdd_xfer(&bvec, pos, dir);
+		pos += sbdd_xfer(&bvec, pos, dir, bio->bi_disk->private_data);
 }
 
 static blk_qc_t sbdd_make_request(struct request_queue *q, struct bio *bio)
 {
-	if (atomic_read(&__sbdd.deleting))
+	struct sbdd *sbdd_dev = bio->bi_disk->private_data;
+	if (atomic_read(&sbdd_dev->deleting))
 		return BLK_STS_IOERR;
 
-	atomic_inc(&__sbdd.refs_cnt);
+	atomic_inc(&sbdd_dev->refs_cnt);
 
 	sbdd_xfer_bio(bio);
 	bio_endio(bio);
 
-	if (atomic_dec_and_test(&__sbdd.refs_cnt))
-		wake_up(&__sbdd.exitwait);
+	if (atomic_dec_and_test(&sbdd_dev->refs_cnt))
+		wake_up(&sbdd_dev->exitwait);
 
 	return BLK_STS_OK;
 }
@@ -312,7 +222,6 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 {
 	int ret = 0;
 	
-	//memset(sbdd_dev, 0, sizeof(struct sbdd));
 	/*
 	This call is somewhat redundant, but used anyways by tradition.
 	The number is to be displayed in /proc/devices (0 for auto).
@@ -394,20 +303,14 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	sbdd_dev->gd->first_minor = 0;
 
 	struct block_device_operations *bdev_ops = kzalloc(sizeof(*bdev_ops), GFP_KERNEL);
-
-	//sbdd_dev->gd->fops = &__sbdd_bdev_ops;
 	sbdd_dev->gd->fops = bdev_ops;
-	//sbdd_dev->gd->fops = sbdd_dev_ops;
 	/* Represents name in /proc/partitions and /sys/block */
 	scnprintf(sbdd_dev->gd->disk_name, DISK_NAME_LEN, dev_name(&sbdd_dev->dev->dev));
-	//pr_info("disk name %s", sbdd_dev->gd->disk_name);
 	set_capacity(sbdd_dev->gd, sbdd_dev->capacity);
+	sbdd_dev->gd->private_data = sbdd_dev;
 
-	//dev_set_drvdata(&sbdd_dev->dev->dev, sbdd_dev);
+	dev_set_drvdata(&sbdd_dev->dev->dev, sbdd_dev);
 
-	//sbdd_dev->dev = disk_to_dev(sbdd_dev->gd);
-	
-	//sbdd_dev->dev->parent = NULL;
 	/*
 	Allocating gd does not make it available, add_disk() required.
 	After this call, gd methods can be called at any time. Should not be
@@ -415,7 +318,6 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	*/
 	pr_info("adding disk\n");
 	device_add_disk(&sbdd_dev->dev->dev, sbdd_dev->gd, NULL);
-	//add_disk(sbdd_dev->gd);
 	
 	return ret;
 }
@@ -423,6 +325,7 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 static void sbdd_delete(struct sbdd *sbdd_dev)
 {
 	char name[DISK_NAME_LEN];
+	pr_info("deleting dev...\n");
 	atomic_set(&sbdd_dev->deleting, 1);
 
 	wait_event(sbdd_dev->exitwait, !atomic_read(&sbdd_dev->refs_cnt));
@@ -466,9 +369,6 @@ static void sbdd_delete(struct sbdd *sbdd_dev)
 	memset(sbdd_dev, 0, sizeof(struct sbdd));
 }
 
-static struct sbdd sbdd_arr[10];
-
-
 /*
 Note __init is for the kernel to drop this function after
 initialization complete making its memory available for other uses.
@@ -485,10 +385,10 @@ static int __init sbdd_driver_init(void)
                 pr_err("unable to register driver: %d\n", ret);
                 goto driver_err;
         }
-	/*
+	
 	if (__auto_add_dev) {
 		pr_info("starting dev initialization...\n");
-		ret = sbdd_create(&__sbdd, SBDD_NAME, __sbdd_capacity_mib);
+		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib);
 
 		if (ret) {
 			pr_warn("dev initialization failed\n");
@@ -496,31 +396,8 @@ static int __init sbdd_driver_init(void)
 		} else {
 			pr_info("dev initialization complete\n");
 		}
-	}*/
+	}
 
-/*
-//	struct sbdd *sbdd_dev = kzalloc(sizeof(*sbdd_dev), GFP_KERNEL);
-	__sbdd.dev = kzalloc(sizeof(*__sbdd.dev), GFP_KERNEL);
-	if(!__sbdd.dev)
-		return -ENOMEM;
-	__sbdd.dev->dev.parent = NULL;
-	__sbdd.dev->capacity_mib = __sbdd_capacity_mib;
-
-	dev_set_name(&__sbdd.dev->dev, "%s", "sbdd2");
-	ret = device_register(&__sbdd.dev->dev);
-	sbdd_create(&__sbdd);*/
-
-//	sbdd_arr[0] = kzalloc(sizeof(*sbdd_dev), GFP_KERNEL);
-	struct sbdd *sbdd_dev = &sbdd_arr[0];
-	sbdd_dev->dev = kzalloc(sizeof(*sbdd_dev->dev), GFP_KERNEL);
-	
-        if(!sbdd_dev->dev)
-                return -ENOMEM;
-        sbdd_dev->dev->dev.parent = NULL;
-        sbdd_dev->dev->capacity_mib = __sbdd_capacity_mib;
-        dev_set_name(&sbdd_dev->dev->dev, "%s", SBDD_NAME);
-        ret = device_register(&sbdd_dev->dev->dev);
-        sbdd_create(sbdd_dev);
 	return ret;
 
 auto_dev_err:
@@ -540,8 +417,6 @@ static void __exit sbdd_driver_exit(void)
 	pr_info("exiting...\n");
 	sbdd_unregister_driver(&__sbdd_driver);
 	pr_info("driver unregistered\n");
-	/*if(__auto_add_dev)
-		sbdd_delete(&__sbdd);*/
 
 	pr_info("exiting complete\n");
 }

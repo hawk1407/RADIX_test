@@ -35,4 +35,4 @@ ccflags-y := -Wall
 # ccflags-y += -DBLK_MQ_MODE
 # CFLAGS_sbdd.o := -DDEBUG
 
-obj-m := sbdd.o
+obj-m := sbdd_bus.o sbdd_driver.o
