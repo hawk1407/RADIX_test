@@ -57,7 +57,6 @@ static void sbdd_delete(struct sbdd *sbdd_dev);
 int sbdd_drv_probe(struct sbdd_device *dev)
 {
 	struct sbdd *sbdd_dev;
-        char buf[32];
         int ret;
 
 	pr_info("sbdd_drv_probe\n");
@@ -143,23 +142,25 @@ static void sbdd_xfer_rq(struct request *rq)
 	sector_t pos = blk_rq_pos(rq);
 
 	rq_for_each_segment(bvec, rq, iter)
-		pos += sbdd_xfer(&bvec, pos, dir);
+		pos += sbdd_xfer(&bvec, pos, dir, rq->bio->bi_disk->private_data);
 }
 
 static blk_status_t sbdd_queue_rq(struct blk_mq_hw_ctx *hctx,
                                   struct blk_mq_queue_data const *bd)
 {
-	if (atomic_read(&__sbdd.deleting))
+	struct sbdd *sbdd_dev = bd->rq->bio->bi_disk->private_data;
+
+	if (atomic_read(&sbdd_dev->deleting))
 		return BLK_STS_IOERR;
 
-	atomic_inc(&__sbdd.refs_cnt);
+	atomic_inc(&sbdd_dev->refs_cnt);
 
 	blk_mq_start_request(bd->rq);
 	sbdd_xfer_rq(bd->rq);
 	blk_mq_end_request(bd->rq, BLK_STS_OK);
 
-	if (atomic_dec_and_test(&__sbdd.refs_cnt))
-		wake_up(&__sbdd.exitwait);
+	if (atomic_dec_and_test(&sbdd_dev->refs_cnt))
+		wake_up(&sbdd_dev->exitwait);
 
 	return BLK_STS_OK;
 }
@@ -259,11 +260,12 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	/* Depth of hardware dispatch queues */
 	sbdd_dev->tag_set->queue_depth = 128;
 	sbdd_dev->tag_set->numa_node = NUMA_NO_NODE;
-	/*struct block_device_operations sbdd_bdev_ops = {
-		.owner = THIS_MODULE,
-	};*/
-	sbdd_dev->tag_set->ops = &__sbdd_blk_mq_ops;
-	//sbdd_dev->tag_set->ops = sbdd_bdev_ops;
+	
+	struct blk_mq_ops *sbdd_blk_mq_ops = kzalloc(sizeof(*sbdd_blk_mq_ops), GFP_KERNEL);
+	sbdd_blk_mq_ops->queue_rq = sbdd_queue_rq; 
+	sbdd_dev->tag_set->ops = sbdd_blk_mq_ops;
+
+	//sbdd_dev->tag_set->ops = &__sbdd_blk_mq_ops;
 
 	ret = blk_mq_alloc_tag_set(sbdd_dev->tag_set);
 	if (ret) {
