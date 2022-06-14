@@ -1,9 +1,15 @@
 #ifndef _SBDD_BUS_H
 #define _SBDD_BUS_H
 
+typedef enum {
+	SBDD_RW, 
+	SBDD_R
+} sbdd_acc_mod_t;
+
 struct sbdd_device {
 	struct device dev;
 	unsigned long capacity_mib;
+	sbdd_acc_mod_t acc_mode;
 };
 
 #define to_sbdd_device(device) container_of(device, struct sbdd_device, dev)
@@ -19,7 +25,8 @@ struct sbdd_driver {
 
 int sbdd_register_driver(struct sbdd_driver *drv);
 void sbdd_unregister_driver(struct sbdd_driver *drv);
-int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add);
+int sbdd_add_dev(const char *name, unsigned long capacity_mib, 
+		int allow_add, sbdd_acc_mod_t acc_mode);
 void set_usr_mod_dev(int only_usr_mod_dev);
 
 #endif //_SBDD_BUS_H

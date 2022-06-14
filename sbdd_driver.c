@@ -54,6 +54,22 @@ struct sbdd {
 static int sbdd_create(struct sbdd *sbdd_dev);
 static void sbdd_delete(struct sbdd *sbdd_dev);
 
+static char *sbdd_devnode_rw(struct gendisk *gd, umode_t *mode)
+{
+	pr_info("%s\n", __func__);
+	if (mode != NULL)
+		*mode = 0666;//(umode_t)(S_IRUGO|S_IWUGO);
+	return NULL;
+}
+
+static char *sbdd_devnode_r(struct gendisk *gd, umode_t *mode)
+{
+	pr_info("%s\n", __func__);
+	if (mode != NULL)
+		*mode = 0444;//(umode_t)(S_IWUSR);
+	return NULL;
+}
+
 int sbdd_drv_probe(struct sbdd_device *dev)
 {
 	struct sbdd *sbdd_dev;
@@ -73,6 +89,26 @@ int sbdd_drv_probe(struct sbdd_device *dev)
 		dev_err(&dev->dev, "failed to register block device: %d\n", ret);
                 return ret;
 	}
+
+//	block_devnode(sbdd_dev->dev->dev, 0666);
+/*	atomic_set(&sbdd_dev->deleting, 1);
+
+        wait_event(sbdd_dev->exitwait, !atomic_read(&sbdd_dev->refs_cnt));
+
+        if (sbdd_dev->gd) {
+                pr_info("deleting disk\n");
+                del_gendisk(sbdd_dev->gd);
+        }
+
+	atomic_set(&sbdd_dev->deleting, 0);*/
+
+
+//	sbdd_dev->gd->devnode = sbdd_devnode_r;
+
+/*	pr_info("adding disk\n");
+        device_add_disk(&sbdd_dev->dev->dev, sbdd_dev->gd, NULL);*/
+
+	
 
 	return 0;
 }
@@ -219,6 +255,7 @@ static struct block_device_operations const __sbdd_bdev_ops = {
 	.owner = THIS_MODULE,
 };
 
+
 static int sbdd_create(struct sbdd *sbdd_dev)
 {
 	int ret = 0;
@@ -310,6 +347,17 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	scnprintf(sbdd_dev->gd->disk_name, DISK_NAME_LEN, dev_name(&sbdd_dev->dev->dev));
 	set_capacity(sbdd_dev->gd, sbdd_dev->capacity);
 	sbdd_dev->gd->private_data = sbdd_dev;
+	switch (sbdd_dev->dev->acc_mode) {
+	case SBDD_RW:
+		sbdd_dev->gd->devnode = sbdd_devnode_rw;
+		break;
+	case SBDD_R:
+		sbdd_dev->gd->devnode = sbdd_devnode_r;
+		break;
+	default:
+		sbdd_dev->gd->devnode = sbdd_devnode_r;
+	}
+	//sbdd_dev->gd->devnode = sbdd_devnode_rw;
 
 	dev_set_drvdata(&sbdd_dev->dev->dev, sbdd_dev);
 
@@ -390,7 +438,7 @@ static int __init sbdd_driver_init(void)
 
 	if (!__usr_mod_dev) {
 		pr_info("starting dev initialization...\n");
-		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib, 1);
+		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib, 1, SBDD_RW);
 
 		if (ret) {
 			pr_warn("dev initialization failed\n");
