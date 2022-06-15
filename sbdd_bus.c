@@ -163,16 +163,15 @@ add_store(struct bus_type *bt, const char *buf, size_t count)
 {
 	char name[32];
 	unsigned long capacity_mib;
-	int acc_mode;
 	int ret;
-	ret = sscanf(buf, "%31s %lu %d", name, &capacity_mib, &acc_mode);
-	if(ret != 3)
+	ret = sscanf(buf, "%31s %lu", name, &capacity_mib);
+	if(ret != 2)
 	{
 		pr_err("user add_dev not enough arguments read\n");
 		return -EINVAL;
 	}
 
-	return sbdd_add_dev(name, capacity_mib, usr_mod_dev, acc_mode) ? : count;
+	return sbdd_add_dev(name, capacity_mib, usr_mod_dev) ? : count;
 }
 struct bus_attribute bus_attr_add = __ATTR(add, S_IWUSR, NULL, add_store);
 
@@ -215,8 +214,7 @@ struct bus_type __sbdd_bus_type = {
 	//.dev_groups = sbdd_dev_groups,
 };
 
-int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add, 
-		sbdd_acc_mod_t acc_mode)
+int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add)
 {
 	struct sbdd_device *sbdd_dev;
 	if(!allow_add)
@@ -233,7 +231,6 @@ int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add,
         sbdd_dev->dev.type = &__sbdd_device_type;
         sbdd_dev->dev.parent = NULL;
 	sbdd_dev->capacity_mib = capacity_mib;
-	sbdd_dev->acc_mode = acc_mode;
 
         dev_set_name(&sbdd_dev->dev, "%s", name);
 

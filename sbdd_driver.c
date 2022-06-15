@@ -46,29 +46,15 @@ struct sbdd {
         struct gendisk          *gd;
         struct sbdd_device      *dev;
         struct request_queue    *q;
+	struct block_device_operations *bdev_ops;
 #ifdef BLK_MQ_MODE
+	struct blk_mq_ops   	*sbdd_blk_mq_ops; 
         struct blk_mq_tag_set   *tag_set;
 #endif
 };
 
 static int sbdd_create(struct sbdd *sbdd_dev);
 static void sbdd_delete(struct sbdd *sbdd_dev);
-
-/*static char *sbdd_devnode_rw(struct gendisk *gd, umode_t *mode)
-{
-	pr_info("%s\n", __func__);
-	if (mode != NULL)
-		*mode = 0666;//(umode_t)(S_IRUGO|S_IWUGO);
-	return NULL;
-}
-
-static char *sbdd_devnode_r(struct gendisk *gd, umode_t *mode)
-{
-	pr_info("%s\n", __func__);
-	if (mode != NULL)
-		*mode = 0444;//(umode_t)(S_IWUSR);
-	return NULL;
-}*/
 
 int sbdd_drv_probe(struct sbdd_device *dev)
 {
@@ -121,7 +107,24 @@ int sbdd_drv_resize_disk(struct sbdd_device *dev, unsigned long capacity_mib)
 
         pr_info("sbdd drv resize %s to %lu\n", dev_name(&sbdd_dev->dev->dev), capacity_mib);
 
-	//TODO: do resize
+	spin_lock_init(&sbdd_dev->datalock);
+        init_waitqueue_head(&sbdd_dev->exitwait);
+
+	sbdd_dev->dev->capacity_mib = capacity_mib;	
+	sbdd_dev->capacity = (sector_t)sbdd_dev->dev->capacity_mib * SBDD_MIB_SECTORS;
+
+        pr_info("allocating data\n");
+        pr_info("data for allocation %llu\n", sbdd_dev->capacity << SBDD_SECTOR_SHIFT);
+
+	vfree(sbdd_dev->data);
+
+	sbdd_dev->data = vmalloc(sbdd_dev->capacity << SBDD_SECTOR_SHIFT);
+        if (!sbdd_dev->data) {
+                pr_err("unable to alloc data\n");
+                return -ENOMEM;
+        }
+
+	set_capacity(sbdd_dev->gd, sbdd_dev->capacity);
 	
 	return 0;
 }
@@ -275,11 +278,7 @@ static struct block_device_operations const __sbdd_bdev_ops = {
 static int sbdd_create(struct sbdd *sbdd_dev)
 {
 	int ret = 0;
-	struct block_device_operations *bdev_ops;
-#ifdef BLK_MQ_MODE
-	struct blk_mq_ops *sbdd_blk_mq_ops; 
-#endif
-
+	
 	/*
 	This call is somewhat redundant, but used anyways by tradition.
 	The number is to be displayed in /proc/devices (0 for auto).
@@ -318,9 +317,9 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	sbdd_dev->tag_set->queue_depth = 128;
 	sbdd_dev->tag_set->numa_node = NUMA_NO_NODE;
 	
-	sbdd_blk_mq_ops = kzalloc(sizeof(*sbdd_blk_mq_ops), GFP_KERNEL);
+	sbdd_dev->sbdd_blk_mq_ops = kzalloc(sizeof(*sbdd_dev->sbdd_blk_mq_ops), GFP_KERNEL);
 	sbdd_blk_mq_ops->queue_rq = sbdd_queue_rq; 
-	sbdd_dev->tag_set->ops = sbdd_blk_mq_ops;
+	sbdd_dev->tag_set->ops = sbdd_dev->sbdd_blk_mq_ops;
 
 	//sbdd_dev->tag_set->ops = &__sbdd_blk_mq_ops;
 
@@ -361,22 +360,12 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	sbdd_dev->gd->major = sbdd_dev->major;
 	sbdd_dev->gd->first_minor = 0;
 
-	bdev_ops = kzalloc(sizeof(*bdev_ops), GFP_KERNEL);
-	sbdd_dev->gd->fops = bdev_ops;
+	sbdd_dev->bdev_ops = kzalloc(sizeof(*sbdd_dev->bdev_ops), GFP_KERNEL);
+	sbdd_dev->gd->fops = sbdd_dev->bdev_ops;
 	/* Represents name in /proc/partitions and /sys/block */
 	scnprintf(sbdd_dev->gd->disk_name, DISK_NAME_LEN, dev_name(&sbdd_dev->dev->dev));
 	set_capacity(sbdd_dev->gd, sbdd_dev->capacity);
 	sbdd_dev->gd->private_data = sbdd_dev;
-/*	switch (sbdd_dev->dev->acc_mode) {
-	case SBDD_RW:
-		sbdd_dev->gd->devnode = sbdd_devnode_rw;
-		break;
-	case SBDD_R:
-		sbdd_dev->gd->devnode = sbdd_devnode_r;
-		break;
-	default:
-		sbdd_dev->gd->devnode = sbdd_devnode_r;
-	}*/
 
 	dev_set_drvdata(&sbdd_dev->dev->dev, sbdd_dev);
 
@@ -423,6 +412,10 @@ static void sbdd_delete(struct sbdd *sbdd_dev)
 
 	if (sbdd_dev->tag_set)
 		kfree(sbdd_dev->tag_set);
+
+	if (sbdd_dev->sbdd_blk_mq_ops)
+		kfree(sbdd_dev->sbdd_blk_mq_ops);
+
 #endif
 
 	if (sbdd_dev->data) {
@@ -435,6 +428,9 @@ static void sbdd_delete(struct sbdd *sbdd_dev)
 		unregister_blkdev(sbdd_dev->major, name);
 		sbdd_dev->major = 0;
 	}
+
+	if (sbdd_dev->bdev_ops)
+		kfree(sbdd_dev->bdev_ops);
 	memset(sbdd_dev, 0, sizeof(struct sbdd));
 }
 
@@ -457,7 +453,7 @@ static int __init sbdd_driver_init(void)
 
 	if (!__usr_mod_dev) {
 		pr_info("starting dev initialization...\n");
-		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib, 1, SBDD_RW);
+		ret = sbdd_add_dev(SBDD_NAME, __sbdd_capacity_mib, 1);
 
 		if (ret) {
 			pr_warn("dev initialization failed\n");
