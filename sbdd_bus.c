@@ -28,6 +28,8 @@
 
 #include "sbdd_bus.h"
 
+static int usr_mod_dev;
+
 static int sbdd_match(struct device *dev, struct device_driver *driver)
 {
 	struct sbdd_device *sbdd_dev;
@@ -87,13 +89,74 @@ static void sbdd_dev_release(struct device *dev)
         kfree(sbdd_dev);
 }
 
-struct device_type __sbdd_device_type = {
-	.uevent = sbdd_dev_uevent,
-	.release = sbdd_dev_release,
+static int sbdd_del_dev(struct device *dev, void *p);
+static int sbdd_del_dev_name(const char *name, int allow_del);
+
+static ssize_t
+resize_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sbdd_device *sbdd_dev;
+	struct sbdd_driver *sbdd_drv;
+	unsigned long capacity_mib;
+	int ret;
+	ret = sscanf(buf, "%lu", &capacity_mib);
+	if(ret != 1)
+        {
+                pr_err("resize_dev not enough arguments read\n");
+                return -EINVAL;
+        }
+
+	sbdd_dev = to_sbdd_device(dev);
+        sbdd_drv = to_sbdd_driver(dev->driver);
+	
+	return sbdd_drv->resize_disk(sbdd_dev, capacity_mib) ? : count;
+}
+struct device_attribute dev_attr_resize = __ATTR(resize, S_IWUSR, NULL, resize_store);
+
+static ssize_t
+set_mod_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sbdd_device *sbdd_dev;
+        struct sbdd_driver *sbdd_drv;
+	int flag_ro;
+	int ret;
+
+	ret = sscanf(buf, "%d", &flag_ro);  
+        if (ret != 1) {
+                pr_err("set_mod_dev not enough arguments read\n");
+                return -EINVAL;
+	}
+
+	sbdd_dev = to_sbdd_device(dev);
+        sbdd_drv = to_sbdd_driver(dev->driver);
+
+        return sbdd_drv->set_mod(sbdd_dev, flag_ro) ? : count;
+
+}
+struct device_attribute dev_attr_set_mod = __ATTR(set_mod, S_IWUSR, NULL, set_mod_store);
+
+static struct attribute *sbdd_dev_attrs[] = {
+        &dev_attr_resize.attr,
+	&dev_attr_set_mod.attr,
+        NULL
+};
+
+static struct attribute_group sbdd_dev_group = {
+        .attrs = sbdd_dev_attrs,
+        NULL,
+};
+
+static const struct attribute_group *sbdd_dev_groups[] = {
+        &sbdd_dev_group,
+        NULL,
 };
 
 
-static int usr_mod_dev;
+struct device_type __sbdd_device_type = {
+	.uevent = sbdd_dev_uevent,
+	.release = sbdd_dev_release,
+	.groups = sbdd_dev_groups,
+};
 
 static ssize_t
 add_store(struct bus_type *bt, const char *buf, size_t count)
@@ -113,7 +176,6 @@ add_store(struct bus_type *bt, const char *buf, size_t count)
 }
 struct bus_attribute bus_attr_add = __ATTR(add, S_IWUSR, NULL, add_store);
 
-static int sbdd_del_dev_name(const char *name, int allow_del);
 
 static ssize_t
 del_store(struct bus_type *bt, const char *buf, size_t count)
@@ -127,7 +189,6 @@ del_store(struct bus_type *bt, const char *buf, size_t count)
 
 }
 struct bus_attribute bus_attr_del = __ATTR(del, S_IWUSR, NULL, del_store);
-
 
 static struct attribute *sbdd_drv_attrs[] = {
 	&bus_attr_add.attr,
@@ -151,8 +212,8 @@ struct bus_type __sbdd_bus_type = {
 	.probe = sbdd_probe,
 	.remove = sbdd_remove,
 	.drv_groups = sbdd_drv_groups,
+	//.dev_groups = sbdd_dev_groups,
 };
-
 
 int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add, 
 		sbdd_acc_mod_t acc_mode)
@@ -179,7 +240,6 @@ int sbdd_add_dev(const char *name, unsigned long capacity_mib, int allow_add,
         return device_register(&sbdd_dev->dev);
 }
 EXPORT_SYMBOL(sbdd_add_dev);
-
 
 static int sbdd_del_dev_name(const char *name, int allow_del)
 {

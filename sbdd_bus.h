@@ -17,6 +17,8 @@ struct sbdd_device {
 struct sbdd_driver {
         int (*probe)(struct sbdd_device *dev);
         void (*remove)(struct sbdd_device *dev);
+	int (*resize_disk)(struct sbdd_device *dev, unsigned long capacity_mib);
+	int (*set_mod)(struct sbdd_device *dev, int flag_ro);
 
         struct device_driver driver;
 };

@@ -54,7 +54,7 @@ struct sbdd {
 static int sbdd_create(struct sbdd *sbdd_dev);
 static void sbdd_delete(struct sbdd *sbdd_dev);
 
-static char *sbdd_devnode_rw(struct gendisk *gd, umode_t *mode)
+/*static char *sbdd_devnode_rw(struct gendisk *gd, umode_t *mode)
 {
 	pr_info("%s\n", __func__);
 	if (mode != NULL)
@@ -68,7 +68,7 @@ static char *sbdd_devnode_r(struct gendisk *gd, umode_t *mode)
 	if (mode != NULL)
 		*mode = 0444;//(umode_t)(S_IWUSR);
 	return NULL;
-}
+}*/
 
 int sbdd_drv_probe(struct sbdd_device *dev)
 {
@@ -90,28 +90,9 @@ int sbdd_drv_probe(struct sbdd_device *dev)
                 return ret;
 	}
 
-//	block_devnode(sbdd_dev->dev->dev, 0666);
-/*	atomic_set(&sbdd_dev->deleting, 1);
-
-        wait_event(sbdd_dev->exitwait, !atomic_read(&sbdd_dev->refs_cnt));
-
-        if (sbdd_dev->gd) {
-                pr_info("deleting disk\n");
-                del_gendisk(sbdd_dev->gd);
-        }
-
-	atomic_set(&sbdd_dev->deleting, 0);*/
-
-
-//	sbdd_dev->gd->devnode = sbdd_devnode_r;
-
-/*	pr_info("adding disk\n");
-        device_add_disk(&sbdd_dev->dev->dev, sbdd_dev->gd, NULL);*/
-
-	
-
 	return 0;
 }
+
 
 void sbdd_drv_remove(struct sbdd_device *dev)
 {
@@ -128,16 +109,51 @@ void sbdd_drv_remove(struct sbdd_device *dev)
 	sbdd_delete(sbdd_dev);
 }
 
+int sbdd_drv_resize_disk(struct sbdd_device *dev, unsigned long capacity_mib)
+{
+	struct sbdd *sbdd_dev=NULL;
+
+        sbdd_dev = (struct sbdd *)dev_get_drvdata(&dev->dev);
+        if (!sbdd_dev) {
+                pr_err("could not find dev\n");
+                return - EINVAL;;
+        }
+
+        pr_info("sbdd drv resize %s to %lu\n", dev_name(&sbdd_dev->dev->dev), capacity_mib);
+
+	//TODO: do resize
+	
+	return 0;
+}
+
+int sbdd_drv_set_mod(struct sbdd_device *dev, int flag_ro)
+{
+        struct sbdd *sbdd_dev=NULL;
+
+        sbdd_dev = (struct sbdd *)dev_get_drvdata(&dev->dev);
+        if (!sbdd_dev) {
+                pr_err("could not find dev\n");
+                return -EINVAL;
+        }
+        pr_info("sbdd drv set %s ro mode %d\n", dev_name(&sbdd_dev->dev->dev), flag_ro);
+
+	set_disk_ro(sbdd_dev->gd, flag_ro);
+
+	return 0;
+}
+
+
 struct sbdd_driver __sbdd_driver = {
         .probe = sbdd_drv_probe,
         .remove = sbdd_drv_remove,
+	.resize_disk = sbdd_drv_resize_disk,
+	.set_mod = sbdd_drv_set_mod,
         .driver = {
                 .owner = THIS_MODULE,
                 .name = SBDD_NAME,
         },
 };
 
-//static struct sbdd      __sbdd;
 static unsigned long    __sbdd_capacity_mib = 100;
 static int __usr_mod_dev = 1;
 
@@ -259,7 +275,11 @@ static struct block_device_operations const __sbdd_bdev_ops = {
 static int sbdd_create(struct sbdd *sbdd_dev)
 {
 	int ret = 0;
-	
+	struct block_device_operations *bdev_ops;
+#ifdef BLK_MQ_MODE
+	struct blk_mq_ops *sbdd_blk_mq_ops; 
+#endif
+
 	/*
 	This call is somewhat redundant, but used anyways by tradition.
 	The number is to be displayed in /proc/devices (0 for auto).
@@ -298,7 +318,7 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	sbdd_dev->tag_set->queue_depth = 128;
 	sbdd_dev->tag_set->numa_node = NUMA_NO_NODE;
 	
-	struct blk_mq_ops *sbdd_blk_mq_ops = kzalloc(sizeof(*sbdd_blk_mq_ops), GFP_KERNEL);
+	sbdd_blk_mq_ops = kzalloc(sizeof(*sbdd_blk_mq_ops), GFP_KERNEL);
 	sbdd_blk_mq_ops->queue_rq = sbdd_queue_rq; 
 	sbdd_dev->tag_set->ops = sbdd_blk_mq_ops;
 
@@ -341,13 +361,13 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 	sbdd_dev->gd->major = sbdd_dev->major;
 	sbdd_dev->gd->first_minor = 0;
 
-	struct block_device_operations *bdev_ops = kzalloc(sizeof(*bdev_ops), GFP_KERNEL);
+	bdev_ops = kzalloc(sizeof(*bdev_ops), GFP_KERNEL);
 	sbdd_dev->gd->fops = bdev_ops;
 	/* Represents name in /proc/partitions and /sys/block */
 	scnprintf(sbdd_dev->gd->disk_name, DISK_NAME_LEN, dev_name(&sbdd_dev->dev->dev));
 	set_capacity(sbdd_dev->gd, sbdd_dev->capacity);
 	sbdd_dev->gd->private_data = sbdd_dev;
-	switch (sbdd_dev->dev->acc_mode) {
+/*	switch (sbdd_dev->dev->acc_mode) {
 	case SBDD_RW:
 		sbdd_dev->gd->devnode = sbdd_devnode_rw;
 		break;
@@ -356,8 +376,7 @@ static int sbdd_create(struct sbdd *sbdd_dev)
 		break;
 	default:
 		sbdd_dev->gd->devnode = sbdd_devnode_r;
-	}
-	//sbdd_dev->gd->devnode = sbdd_devnode_rw;
+	}*/
 
 	dev_set_drvdata(&sbdd_dev->dev->dev, sbdd_dev);
 
