@@ -107,8 +107,8 @@ int sbdd_drv_resize_disk(struct sbdd_device *dev, unsigned long capacity_mib)
 
         pr_info("sbdd drv resize %s to %lu\n", dev_name(&sbdd_dev->dev->dev), capacity_mib);
 
-	spin_lock_init(&sbdd_dev->datalock);
-        init_waitqueue_head(&sbdd_dev->exitwait);
+	spin_lock(&sbdd_dev->datalock);
+        //init_waitqueue_head(&sbdd_dev->exitwait);
 
 	sbdd_dev->dev->capacity_mib = capacity_mib;	
 	sbdd_dev->capacity = (sector_t)sbdd_dev->dev->capacity_mib * SBDD_MIB_SECTORS;
@@ -125,6 +125,7 @@ int sbdd_drv_resize_disk(struct sbdd_device *dev, unsigned long capacity_mib)
         }
 
 	set_capacity(sbdd_dev->gd, sbdd_dev->capacity);
+	spin_unlock(&sbdd_dev->datalock);
 	
 	return 0;
 }

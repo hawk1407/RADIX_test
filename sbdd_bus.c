@@ -22,6 +22,7 @@
 #include <linux/jiffies.h>
 #include <linux/moduleparam.h>
 #include <linux/spinlock_types.h>
+//#include <drivers/base/platform.h>
 #ifdef BLK_MQ_MODE
 #include <linux/blk-mq.h>
 #endif
@@ -189,9 +190,52 @@ del_store(struct bus_type *bt, const char *buf, size_t count)
 }
 struct bus_attribute bus_attr_del = __ATTR(del, S_IWUSR, NULL, del_store);
 
+/*static int custom_match_dev(struct device *dev, void *data)
+{
+// this function implements the comaparison logic. Return not zero if found.
+    const char *name = data;
+
+    return sysfs_streq(name, dev->of_node->name);
+}
+
+static struct device *find_dev( const char *name )
+{
+    struct device *dev = bus_find_device(&platform_bus_type, NULL, name, custom_match_dev);
+
+    return dev;
+}
+
+static int sbdd_find_dev_name(const char *name)
+{
+	struct device *dev;
+	dev = find_dev(name);
+
+	if(dev)
+	{
+		pr_info("dev found %s\n", dev_name(dev));
+	}
+
+	return 1;
+}
+
+static ssize_t
+find_store(struct bus_type *bt, const char *buf, size_t count)
+{
+        char name[32];
+
+        if (sscanf(buf, "%s", name) != 1)
+                return -EINVAL;
+
+        return sbdd_find_dev_name(name) ? : count;
+}
+struct bus_attribute bus_attr_find = __ATTR(find, S_IWUSR, NULL, find_store);
+*/
+
+
 static struct attribute *sbdd_drv_attrs[] = {
 	&bus_attr_add.attr,
 	&bus_attr_del.attr,
+	//&bus_attr_find.attr,
 	NULL
 };
 
